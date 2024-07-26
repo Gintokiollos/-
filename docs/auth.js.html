@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: auth.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: auth.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * 创建数据库连接
+ * @returns {mysql.Connection} MySQL数据库连接
+ */
+function createConnection() {
+    return mysql.createConnection(dbConfig);
+}
+
+/**
+ * 登录接口
+ * @route POST /login
+ * @param {Object} req - Express请求对象
+ * @param {Object} res - Express响应对象
+ * @returns {void}
+ */
+router.post('/login', async (req, res) => {
+    const { code } = req.body;
+
+    if (!code) {
+        return res.status(400).send({ message: 'Code is required' });
+    }
+
+    try {
+        const response = await axios.get('https://api.weixin.qq.com/sns/jscode2session', {
+            params: {
+                appid: APPID,
+                secret: SECRET,
+                js_code: code,
+                grant_type: 'authorization_code'
+            }
+        });
+
+        if (response.data.errcode) {
+            console.error('Error fetching openid:', response.data.errmsg);
+            return res.status(500).send({ message: 'Error fetching openid', error: response.data.errmsg });
+        }
+
+        const { openid, session_key } = response.data;
+
+        // 创建数据库连接
+        const connection = createConnection();
+        connection.connect();
+
+        /**
+         * 查询用户是否存在
+         * @param {string} openid - 用户的OpenID
+         * @param {function} callback - 回调函数
+         * @returns {void}
+         */
+        const checkUserQuery = 'SELECT id FROM users WHERE openid = ?';
+        connection.query(checkUserQuery, [openid], (error, results) => {
+            if (error) {
+                connection.end();
+                return res.status(500).send({ message: 'Error checking user', error });
+            }
+
+            if (results.length > 0) {
+                // 用户已存在
+                const id = results[0].id;
+                const token = jwt.sign({ openid, id }, JWT_SECRET, { expiresIn: config.jwt.expiresIn });
+                connection.end();
+                return res.send({ token, openid, id });
+            }
+
+            // 用户不存在，插入新用户
+            /**
+             * 插入新用户
+             * @param {string} openid - 用户的OpenID
+             * @param {string} avatar_url - 用户头像URL
+             * @param {string} nickname - 用户昵称
+             * @param {string} phone - 用户手机
+             * @param {string} shop_info - 商铺信息
+             * @param {function} callback - 回调函数
+             * @returns {void}
+             */
+            const insertUserQuery = 'INSERT INTO users (openid, avatar_url, nickname, phone, shop_info) VALUES (?, ?, ?, ?, ?)';
+            const values = [openid, '', '微信用户', '', ''];
+
+            connection.query(insertUserQuery, values, (error, results) => {
+                if (error) {
+                    connection.end();
+                    return res.status(500).send({ message: 'Error adding user', error });
+                }
+
+                // 获取新插入的用户 ID
+                const id = results.insertId;
+                const token = jwt.sign({ openid, id }, JWT_SECRET, { expiresIn: config.jwt.expiresIn });
+                connection.end();
+                res.send({ token, openid, id });
+            });
+        });
+    } catch (error) {
+        if (error.response) {
+            console.error('Error response from WeChat API:', error.response.data);
+            res.status(500).send({ message: 'Error logging in', error: error.response.data });
+        } else {
+            console.error('Error logging in:', error.message);
+            res.status(500).send({ message: 'Error logging in', error: error.message });
+        }
+    }
+});
+
+/**
+ * 中间件：验证Token
+ * @param {Object} req - 请求对象
+ * @param {Object} res - 响应对象
+ * @param {function} next - 下一步函数
+ * @returns {void}
+ * @throws {Error} 如果令牌无效或缺失
+ */
+function authenticateToken(req, res, next) {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader &amp;&amp; authHeader.split(' ')[1];
+
+    if (!token) return res.status(401).send({ message: '拒绝访问' });
+
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) return res.status(403).send({ message: '令牌无效' });
+        req.user = user;
+        next();
+    });
+}
+
+// 受保护的路由
+/**
+ * 受保护的示例路由
+ * @route GET /protected
+ * @param {Object} req - Express请求对象
+ * @param {Object} res - Express响应对象
+ * @returns {void}
+ */
+router.get('/protected', authenticateToken, (req, res) => {
+    res.send({ message: '这是一条受保护的路由' });
+});
+
+module.exports = router;
+module.exports.authenticateToken = authenticateToken;
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Global</h3><ul><li><a href="global.html#authenticateToken">authenticateToken</a></li><li><a href="global.html#createConnection">createConnection</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.3</a> on Thu Jul 25 2024 21:37:32 GMT+0800 (台北標準時間)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

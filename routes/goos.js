@@ -4,30 +4,56 @@ const mysql = require('mysql');
 const dbConfig = require('../config/db');
 const { authenticateToken } = require('./auth');
 
-// 创建数据库连接
+/**
+ * 创建数据库连接
+ * @returns {mysql.Connection} 数据库连接对象
+ */
 function createConnection() {
   return mysql.createConnection(dbConfig);
 }
 
-/* GET all products */
+/**
+ * 获取所有产品
+ * @name GET /products
+ * @function
+ * @memberof module:routes/products
+ * @param {express.Request} req - Express 请求对象
+ * @param {express.Response} res - Express 响应对象
+ * @param {express.NextFunction} next - Express 下一个中间件函数
+ */
 router.get('/', authenticateToken, function(req, res, next) {
   const connection = createConnection();
   connection.connect();
 
+  // 查询所有产品
   connection.query('SELECT * FROM products', function (error, results, fields) {
-    if (error) throw error;
+    if (error) {
+      console.error('Error fetching products:', error);
+      res.status(500).send({ message: 'Error fetching products', error });
+      connection.end();
+      return;
+    }
     res.json(results);
+    connection.end();
   });
-
-  connection.end();
 });
 
-/* GET product by product_id */
+/**
+ * 根据 product_id 获取指定产品
+ * @name GET /products/:product_id
+ * @function
+ * @memberof module:routes/products
+ * @param {express.Request} req - Express 请求对象
+ * @param {express.Response} res - Express 响应对象
+ * @param {express.NextFunction} next - Express 下一个中间件函数
+ * @param {string} req.params.product_id - 产品的 ID
+ */
 router.get('/:product_id', authenticateToken, function(req, res, next) {
   const { product_id } = req.params;
   const connection = createConnection();
   connection.connect();
 
+  // 查询指定 product_id 的产品
   const query = 'SELECT * FROM products WHERE product_id = ?';
   connection.query(query, [product_id], function (error, results, fields) {
     if (error) {
@@ -47,7 +73,23 @@ router.get('/:product_id', authenticateToken, function(req, res, next) {
   });
 });
 
-/* POST new product or update existing product */
+/**
+ * 创建新产品或更新现有产品
+ * @name POST /products
+ * @function
+ * @memberof module:routes/products
+ * @param {express.Request} req - Express 请求对象
+ * @param {express.Response} res - Express 响应对象
+ * @param {express.NextFunction} next - Express 下一个中间件函数
+ * @param {Object} req.body - 产品数据
+ * @param {string} req.body.product_id - 产品 ID（用于更新）
+ * @param {string} req.body.image_url - 产品图片 URL
+ * @param {string} req.body.name - 产品名称
+ * @param {number} req.body.price - 产品价格
+ * @param {string} req.body.description - 产品描述
+ * @param {number} req.body.category_id - 产品分类 ID
+ * @param {string} req.body.openid - 产品开放 ID
+ */
 router.post('/', authenticateToken, function(req, res, next) {
   const { product_id, image_url, name, price, description, category_id, openid } = req.body;
   const connection = createConnection();
@@ -93,12 +135,22 @@ router.post('/', authenticateToken, function(req, res, next) {
   });
 });
 
-/* DELETE product by product_id */
+/**
+ * 根据 product_id 删除指定产品
+ * @name DELETE /products/:product_id
+ * @function
+ * @memberof module:routes/products
+ * @param {express.Request} req - Express 请求对象
+ * @param {express.Response} res - Express 响应对象
+ * @param {express.NextFunction} next - Express 下一个中间件函数
+ * @param {string} req.params.product_id - 产品的 ID
+ */
 router.delete('/:product_id', authenticateToken, function(req, res, next) {
   const { product_id } = req.params;
   const connection = createConnection();
   connection.connect();
 
+  // 删除指定 product_id 的产品
   const query = 'DELETE FROM products WHERE product_id = ?';
   connection.query(query, [product_id], function (error, results, fields) {
     if (error) {
